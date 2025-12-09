@@ -26,14 +26,13 @@ def normalize_cancer(name):
 
     if "overall" in name or "skm" in name:
         return None
-
     if "haemat" in name or "hemat" in name:
         return "Haematological"
     if "gyne" in name or "gyn" in name:
         return "Gynecological"
-    if "urological" in name:
+    if "uro" in name:
         return "Urological"
-    if "neurological" in name:
+    if "neuro" in name:
         return "Neurological"
     if "breast" in name:
         return "Breast"
@@ -58,7 +57,6 @@ uploaded_file = st.file_uploader("Upload Excel Workbook", type=["xlsx"])
 
 if uploaded_file:
     xls = pd.ExcelFile(uploaded_file)
-
     sheet_name = st.selectbox("Select Sheet", xls.sheet_names)
     df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
 
@@ -73,9 +71,13 @@ if uploaded_file:
 
     if st.button("Generate Output Excel"):
 
+        # Normalize cancer type
         df["Type of Cancer"] = df[cancer_col].apply(normalize_cancer)
+
+        # Filter out None
         df = df[df["Type of Cancer"].notna()]
 
+        # Format the output
         df["Formatted"] = (
             df[outside_col].astype(str)
             + " ("
@@ -83,18 +85,14 @@ if uploaded_file:
             + "%)"
         )
 
-        final_df = (
-            df.groupby("Type of Cancer", as_index=False)
-              .agg({"Formatted": "first"})
-        )
+        # Aggregate first occurrence for each cancer type
+        agg_df = df.groupby("Type of Cancer", as_index=False).agg({"Formatted": "first"})
 
-        final_df["Type of Cancer"] = pd.Categorical(
-            final_df["Type of Cancer"],
-            categories=FINAL_ORDER,
-            ordered=True
-        )
+        # Ensure all FINAL_ORDER types exist
+        final_df = pd.DataFrame({"Type of Cancer": FINAL_ORDER})
+        final_df = final_df.merge(agg_df, on="Type of Cancer", how="left")
+        final_df["Formatted"].fillna("0 (0%)", inplace=True)  # Fill missing types with zeros
 
-        final_df = final_df.sort_values("Type of Cancer")
         final_df.rename(
             columns={"Formatted": "Number of Not Met Cases (Percentage)"},
             inplace=True
@@ -102,14 +100,9 @@ if uploaded_file:
 
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            final_df.to_excel(
-                writer,
-                index=False,
-                sheet_name="Not Met Summary"
-            )
+            final_df.to_excel(writer, index=False, sheet_name="Not Met Summary")
 
         st.success("✅ Excel generated successfully")
-
         st.download_button(
             "⬇ Download Excel",
             buffer.getvalue(),
