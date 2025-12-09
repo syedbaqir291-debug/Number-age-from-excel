@@ -33,7 +33,7 @@ def normalize_cancer(name):
         return "Gynecological"
     if "uro" in name:
         return "Urological"
-    if "neuro" in name:
+    if "Neurological" in name:
         return "Neurological"
     if "breast" in name:
         return "Breast"
