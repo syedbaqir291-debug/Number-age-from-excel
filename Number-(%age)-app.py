@@ -5,9 +5,7 @@ from io import BytesIO
 st.set_page_config(page_title="Not Met Value Sorter", layout="centered")
 st.title("🧮 Not Met Value Sorter")
 
-uploaded_file = st.file_uploader("Upload Excel Workbook", type=["xlsx"])
-
-# ✅ Required output order
+# ✅ Final forced order
 FINAL_ORDER = [
     "Haematological",
     "Gynecological",
@@ -26,9 +24,12 @@ FINAL_ORDER = [
 def normalize_cancer(name):
     name = str(name).lower()
 
-    if "haemat" in name:
+    if "overall" in name or "skm" in name:
+        return None
+
+    if "haemat" in name or "hemat" in name:
         return "Haematological"
-    if "gyn" in name:
+    if "gyne" in name or "gyn" in name:
         return "Gynecological"
     if "uro" in name:
         return "Urological"
@@ -38,7 +39,7 @@ def normalize_cancer(name):
         return "Breast"
     if "pulmo" in name or "lung" in name:
         return "Pulmonary"
-    if "gastro" in name or "gi" in name:
+    if "gastro" in name:
         return "Gastrointestinal"
     if "head" in name or "neck" in name:
         return "Head & Neck"
@@ -51,8 +52,9 @@ def normalize_cancer(name):
     if "non" in name or "rare" in name or "specific" in name:
         return "Other rare tumors"
 
-    # fallback
     return "Other rare tumors"
+
+uploaded_file = st.file_uploader("Upload Excel Workbook", type=["xlsx"])
 
 if uploaded_file:
     xls = pd.ExcelFile(uploaded_file)
@@ -60,45 +62,41 @@ if uploaded_file:
     sheet_name = st.selectbox("Select Sheet", xls.sheet_names)
     df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
 
-    st.subheader("Preview Data")
+    st.subheader("Preview")
     st.dataframe(df.head())
 
-    cancer_col = st.selectbox("Select cancer/type column", df.columns)
-    outside_col = st.selectbox("Value OUTSIDE brackets (Not Met)", df.columns)
+    cancer_col = st.selectbox("Select Cancer / Type column", df.columns)
+    outside_col = st.selectbox("Value OUTSIDE brackets (Not Met Count)", df.columns)
     inside_col = st.selectbox("Value INSIDE brackets (%)", df.columns)
 
-    decimals = st.selectbox(
-        "Decimal places for percentage",
-        [0, 1, 2, 3, 4]
-    )
+    decimals = st.selectbox("Decimal places for percentage", [0, 1, 2, 3, 4])
 
     if st.button("Generate Output Excel"):
 
         df["Type of Cancer"] = df[cancer_col].apply(normalize_cancer)
+        df = df[df["Type of Cancer"].notna()]
 
-        df["Formatted Value"] = (
+        df["Formatted"] = (
             df[outside_col].astype(str)
             + " ("
             + df[inside_col].astype(float).round(decimals).astype(str)
             + "%)"
         )
 
-        # ✅ Aggregate in case multiple rows map to same cancer
         final_df = (
             df.groupby("Type of Cancer", as_index=False)
-              .agg({"Formatted Value": "first"})
+              .agg({"Formatted": "first"})
         )
 
-        # ✅ Apply forced sorting
         final_df["Type of Cancer"] = pd.Categorical(
             final_df["Type of Cancer"],
             categories=FINAL_ORDER,
             ordered=True
         )
-        final_df = final_df.sort_values("Type of Cancer")
 
+        final_df = final_df.sort_values("Type of Cancer")
         final_df.rename(
-            columns={"Formatted Value": "Number of Not Met Cases (Percentage)"},
+            columns={"Formatted": "Number of Not Met Cases (Percentage)"},
             inplace=True
         )
 
@@ -110,7 +108,7 @@ if uploaded_file:
                 sheet_name="Not Met Summary"
             )
 
-        st.success("✅ Excel generated with fixed order & fuzzy matching")
+        st.success("✅ Excel generated successfully")
 
         st.download_button(
             "⬇ Download Excel",
