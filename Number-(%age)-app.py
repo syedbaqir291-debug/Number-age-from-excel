@@ -2,110 +2,70 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="Not Met Value Sorter", layout="centered")
-st.title("🧮 Not Met Value Sorter")
+st.title("Excel Formatter: Not Met (Percentage) Generator with Fixed Order")
 
-# Final forced order
-FINAL_ORDER = [
-    "Haematological",
-    "Gynecological",
-    "Urological",
-    "Neurological",
-    "Breast",
-    "Pulmonary",
-    "Gastrointestinal",
-    "Head & Neck",
-    "Thyroid",
-    "Sarcoma",
-    "Retinoblastoma",
-    "Other rare tumors"
+# Fixed category order
+fixed_order = [
+    "Haematological", "Gynecological", "Urological", "Neurological",
+    "Breast", "Pulmonary", "Gastrointestinal", "Head & Neck",
+    "Thyroid", "Sarcoma", "Retinoblastoma", "Other rare tumors"
 ]
 
-def normalize_cancer(name):
-    name = str(name).lower()
-    if "overall" in name or "skm" in name:
-        return None
-    if "haemat" in name or "hemat" in name:
-        return "Haematological"
-    if "gyne" in name or "gyn" in name:
-        return "Gynecological"
-    if "uro" in name:
-        return "Urological"
-    if "neuro" in name:
-        return "Neurological"
-    if "breast" in name:
-        return "Breast"
-    if "pulmo" in name or "lung" in name:
-        return "Pulmonary"
-    if "gastro" in name:
-        return "Gastrointestinal"
-    if "head" in name or "neck" in name:
-        return "Head & Neck"
-    if "thyroid" in name:
-        return "Thyroid"
-    if "sarcoma" in name:
-        return "Sarcoma"
-    if "retino" in name:
-        return "Retinoblastoma"
-    if "non" in name or "rare" in name or "specific" in name:
-        return "Other rare tumors"
-    return "Other rare tumors"
-
-uploaded_file = st.file_uploader("Upload Excel Workbook", type=["xlsx"])
-
+# Step 1: Upload file
+uploaded_file = st.file_uploader("Upload Excel file", type=["xlsx"])
 if uploaded_file:
-    xls = pd.ExcelFile(uploaded_file)
-    sheet_name = st.selectbox("Select Sheet", xls.sheet_names)
-    df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
+    # Load Excel file
+    xl = pd.ExcelFile(uploaded_file)
+    sheet_name = st.selectbox("Select sheet", xl.sheet_names)
+    df = xl.parse(sheet_name)
 
-    st.subheader("Preview")
+    st.write("Preview of sheet:")
     st.dataframe(df.head())
 
-    cancer_col = st.selectbox("Select Cancer / Type column", df.columns)
-    outside_col = st.selectbox("Value OUTSIDE brackets (Not Met Count)", df.columns)
-    inside_col = st.selectbox("Value INSIDE brackets (%)", df.columns)
-    decimals = st.selectbox("Decimal places for percentage", [0, 1, 2, 3, 4])
+    # Step 2: Select columns
+    category_col = st.selectbox("Select column for categories", df.columns)
+    outside_col = st.selectbox("Select column for outside-bracket values", df.columns)
+    inside_col = st.selectbox("Select column for inside-bracket values", df.columns)
 
-    if st.button("Generate Output Excel"):
-        # Normalize cancer type
-        df["Type of Cancer"] = df[cancer_col].apply(normalize_cancer)
-        df = df[df["Type of Cancer"].notna()]
+    # Step 3: Decimal places
+    decimal_place = st.selectbox("Select decimal places for inside-bracket value", [0, 1, 2, 3])
 
-        # Ensure numeric values
-        df[outside_col] = pd.to_numeric(df[outside_col], errors='coerce').fillna(0)
-        df[inside_col] = pd.to_numeric(df[inside_col], errors='coerce').fillna(0)
-
-        # Aggregate sum for Not Met, mean for % inside brackets
-        agg_df = df.groupby("Type of Cancer", as_index=False).agg({
-            outside_col: "sum",
-            inside_col: "mean"
-        })
-
-        # Format as "Count (Percentage)"
-        agg_df["Number of Not Met Cases (Percentage)"] = (
-            agg_df[outside_col].astype(int).astype(str)
-            + " ("
-            + agg_df[inside_col].round(decimals).astype(str)
-            + "%)"
+    if st.button("Generate Excel"):
+        # Format the new column
+        df["Not Met (Non-compliance %)"] = df.apply(
+            lambda row: f"{row[outside_col]} ({round(row[inside_col], decimal_place)}%)", axis=1
         )
 
-        # Merge with FINAL_ORDER to include all categories
-        final_df = pd.DataFrame({"Type of Cancer": FINAL_ORDER})
-        final_df = final_df.merge(
-            agg_df[["Type of Cancer", "Number of Not Met Cases (Percentage)"]],
-            on="Type of Cancer", how="left"
-        )
-        final_df["Number of Not Met Cases (Percentage)"].fillna("0 (0%)", inplace=True)
+        # Create result dataframe following fixed order
+        result_list = []
+        for category in fixed_order:
+            match = df[df[category_col].str.contains(category, case=False, na=False)]
+            if not match.empty:
+                result_list.append({
+                    category_col: category,
+                    "Not Met (Non-compliance %)": match.iloc[0]["Not Met (Non-compliance %)"]
+                })
+            else:
+                # If category not in sheet, put dash
+                result_list.append({
+                    category_col: category,
+                    "Not Met (Non-compliance %)": "-"
+                })
 
-        # Export to Excel
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            final_df.to_excel(writer, index=False, sheet_name="Not Met Summary")
+        result_df = pd.DataFrame(result_list)
 
-        st.success("✅ Excel generated successfully")
+        # Save to Excel in memory
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            result_df.to_excel(writer, index=False, sheet_name="Formatted Output")
+        processed_data = output.getvalue()
+
+        # Download button
         st.download_button(
-            "⬇ Download Excel",
-            buffer.getvalue(),
-            file_name="Not_Met_Value_Sorter_Output.xlsx",
+            label="Download formatted Excel",
+            data=processed_data,
+            file_name="Formatted_NotMet.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        st.success("Excel generated successfully!")
