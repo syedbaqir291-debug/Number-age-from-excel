@@ -2,14 +2,23 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.title("Excel Formatter: Not Met (Percentage) Generator with Fixed Order")
+st.title("Excel Formatter: Not Met (Percentage) Generator")
 
-# Fixed category order
-fixed_order = [
-    "Haematological", "Gynecological", "Urological", "Neurological",
-    "Breast", "Pulmonary", "Gastrointestinal", "Head & Neck",
-    "Thyroid", "Sarcoma", "Retinoblastoma", "Other rare tumors"
-]
+# Fixed category order and possible variants
+category_mapping = {
+    "Haematological": ["Haematological", "Haematological malignancies"],
+    "Gynecological": ["Gynecological", "Gynecological Tumors", "Gynecological malignancies"],
+    "Urological": ["Urological", "Urological Tumors"],
+    "Neurological": ["Neurological", "Neurological malignancies"],
+    "Breast": ["Breast", "Breast cancer"],
+    "Pulmonary": ["Pulmonary", "Pulmonary malignancies"],
+    "Gastrointestinal": ["Gastrointestinal", "Gastrointestinal malignancies"],
+    "Head & Neck": ["Head & Neck", "Head and Neck", "Head-Neck", "Head & neck", "Head-neck", "Head and neck"],
+    "Thyroid": ["Thyroid", "Thyroid cancers"],
+    "Sarcoma": ["Sarcoma"],
+    "Retinoblastoma": ["Retinoblastoma"],
+    "Other rare tumors": ["Other rare tumors", "Others", "Non-specific", "non-specific", "Non Specific"]
+}
 
 # Step 1: Upload file
 uploaded_file = st.file_uploader("Upload Excel file", type=["xlsx"])
@@ -36,19 +45,19 @@ if uploaded_file:
             lambda row: f"{row[outside_col]} ({round(row[inside_col], decimal_place)}%)", axis=1
         )
 
-        # Create result dataframe following fixed order
+        # Create result dataframe following fixed order & variants
         result_list = []
-        for category in fixed_order:
-            match = df[df[category_col].str.contains(category, case=False, na=False)]
+        for fixed_cat, variants in category_mapping.items():
+            # Search for any variant in the dataframe
+            match = df[df[category_col].str.contains('|'.join(variants), case=False, na=False)]
             if not match.empty:
                 result_list.append({
-                    category_col: category,
+                    category_col: fixed_cat,
                     "Not Met (Non-compliance %)": match.iloc[0]["Not Met (Non-compliance %)"]
                 })
             else:
-                # If category not in sheet, put dash
                 result_list.append({
-                    category_col: category,
+                    category_col: fixed_cat,
                     "Not Met (Non-compliance %)": "-"
                 })
 
