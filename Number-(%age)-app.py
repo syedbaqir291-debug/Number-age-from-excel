@@ -5,7 +5,7 @@ from io import BytesIO
 st.set_page_config(page_title="Not Met Value Sorter", layout="centered")
 st.title("🧮 Not Met Value Sorter")
 
-# ✅ Final forced order
+# Final forced order
 FINAL_ORDER = [
     "Haematological",
     "Gynecological",
@@ -23,7 +23,6 @@ FINAL_ORDER = [
 
 def normalize_cancer(name):
     name = str(name).lower()
-
     if "overall" in name or "skm" in name:
         return None
     if "haemat" in name or "hemat" in name:
@@ -50,7 +49,6 @@ def normalize_cancer(name):
         return "Retinoblastoma"
     if "non" in name or "rare" in name or "specific" in name:
         return "Other rare tumors"
-
     return "Other rare tumors"
 
 uploaded_file = st.file_uploader("Upload Excel Workbook", type=["xlsx"])
@@ -66,38 +64,40 @@ if uploaded_file:
     cancer_col = st.selectbox("Select Cancer / Type column", df.columns)
     outside_col = st.selectbox("Value OUTSIDE brackets (Not Met Count)", df.columns)
     inside_col = st.selectbox("Value INSIDE brackets (%)", df.columns)
-
     decimals = st.selectbox("Decimal places for percentage", [0, 1, 2, 3, 4])
 
     if st.button("Generate Output Excel"):
-
         # Normalize cancer type
         df["Type of Cancer"] = df[cancer_col].apply(normalize_cancer)
-
-        # Filter out None
         df = df[df["Type of Cancer"].notna()]
 
-        # Format the output
-        df["Formatted"] = (
-            df[outside_col].astype(str)
+        # Ensure numeric values
+        df[outside_col] = pd.to_numeric(df[outside_col], errors='coerce').fillna(0)
+        df[inside_col] = pd.to_numeric(df[inside_col], errors='coerce').fillna(0)
+
+        # Aggregate sum for Not Met, mean for % inside brackets
+        agg_df = df.groupby("Type of Cancer", as_index=False).agg({
+            outside_col: "sum",
+            inside_col: "mean"
+        })
+
+        # Format as "Count (Percentage)"
+        agg_df["Number of Not Met Cases (Percentage)"] = (
+            agg_df[outside_col].astype(int).astype(str)
             + " ("
-            + df[inside_col].astype(float).round(decimals).astype(str)
+            + agg_df[inside_col].round(decimals).astype(str)
             + "%)"
         )
 
-        # Aggregate first occurrence for each cancer type
-        agg_df = df.groupby("Type of Cancer", as_index=False).agg({"Formatted": "first"})
-
-        # Ensure all FINAL_ORDER types exist
+        # Merge with FINAL_ORDER to include all categories
         final_df = pd.DataFrame({"Type of Cancer": FINAL_ORDER})
-        final_df = final_df.merge(agg_df, on="Type of Cancer", how="left")
-        final_df["Formatted"].fillna("0 (0%)", inplace=True)  # Fill missing types with zeros
-
-        final_df.rename(
-            columns={"Formatted": "Number of Not Met Cases (Percentage)"},
-            inplace=True
+        final_df = final_df.merge(
+            agg_df[["Type of Cancer", "Number of Not Met Cases (Percentage)"]],
+            on="Type of Cancer", how="left"
         )
+        final_df["Number of Not Met Cases (Percentage)"].fillna("0 (0%)", inplace=True)
 
+        # Export to Excel
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             final_df.to_excel(writer, index=False, sheet_name="Not Met Summary")
