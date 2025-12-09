@@ -13,7 +13,7 @@ uploaded_file = st.file_uploader(
 if uploaded_file:
     xls = pd.ExcelFile(uploaded_file)
 
-    # Step 1: Sheet selection
+    # Sheet selection
     sheet_name = st.selectbox(
         "Select Sheet",
         xls.sheet_names
@@ -24,7 +24,7 @@ if uploaded_file:
     st.subheader("Preview Data")
     st.dataframe(df.head())
 
-    # Step 2: Column selections
+    # Column selections
     col_name_column = st.selectbox(
         "Select column for Cancer / Type name",
         df.columns
@@ -40,18 +40,31 @@ if uploaded_file:
         df.columns
     )
 
+    # ✅ Decimal selection
+    decimals = st.selectbox(
+        "Select number of decimal places for percentage",
+        options=[0, 1, 2, 3, 4]
+    )
+
     if st.button("Generate Output Excel"):
+
+        def format_percentage(val):
+            try:
+                return f"{float(val):.{decimals}f}"
+            except:
+                return ""
+
         output_df = pd.DataFrame()
         output_df["Type of Cancer"] = df[col_name_column]
 
         output_df["Number of Not Met Cases (Percentage)"] = (
             df[outside_bracket_col].astype(str)
-            + " (" +
-            df[inside_bracket_col].astype(str) +
-            "%)"
+            + " ("
+            + df[inside_bracket_col].apply(format_percentage)
+            + "%)"
         )
 
-        # Create Excel file in memory
+        # Write to Excel in memory
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             output_df.to_excel(
@@ -60,7 +73,7 @@ if uploaded_file:
                 sheet_name="Not Met Summary"
             )
 
-        st.success("✅ Excel file generated successfully")
+        st.success("✅ Excel generated successfully")
 
         st.download_button(
             label="⬇ Download Excel",
